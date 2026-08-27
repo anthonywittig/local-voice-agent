@@ -6,9 +6,30 @@
 
 import shutil
 import subprocess
+import sys
 import tempfile
 
 from .config import Config
+
+
+def _warn_if_output_muted() -> None:
+    """say succeeds even when the Mac is muted, so surface that footgun."""
+    try:
+        result = subprocess.run(
+            ["osascript", "-e", "output muted of (get volume settings)"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return
+    if result.returncode == 0 and result.stdout.strip().lower() == "true":
+        print(
+            "Warning: system audio is muted, so you will not hear the agent. "
+            "Unmute in Control Center, or run: osascript -e 'set volume output muted false'",
+            file=sys.stderr,
+        )
 
 
 class TextToSpeech:
@@ -21,6 +42,8 @@ class TextToSpeech:
             )
         if config.tts_engine == "piper" and shutil.which("piper") is None:
             raise RuntimeError("piper not found on PATH. Install with: pip install piper-tts")
+        if config.tts_engine == "say":
+            _warn_if_output_muted()
 
     def speak(self, text: str) -> None:
         if self.cfg.tts_engine == "say":
