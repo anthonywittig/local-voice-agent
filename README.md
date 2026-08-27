@@ -32,6 +32,20 @@ latency.
 
 ## Setup
 
+```sh
+make setup   # venv, Python deps, PortAudio, Ollama, LLM weights
+make run     # start taking orders
+```
+
+Stay quiet for the one-second mic calibration, listen to the greeting, then
+just talk. The agent detects when you stop speaking, transcribes, thinks,
+and talks back. Ctrl-C hangs up.
+
+`make help` lists the other targets (`install`, `ollama`, `clean`). To use a
+different LLM: `make setup LLM_MODEL=qwen2.5:7b` then `make run`.
+
+### Manual setup
+
 1. **Install Ollama** and pull the LLM:
 
    ```sh
@@ -54,10 +68,6 @@ latency.
    ```sh
    pizza-agent
    ```
-
-   Stay quiet for the one-second mic calibration, listen to the greeting, then
-   just talk. The agent detects when you stop speaking, transcribes, thinks,
-   and talks back. Ctrl-C hangs up.
 
 The first run downloads the Whisper weights (~150 MB) to the Hugging Face
 cache; after that, everything works offline.
