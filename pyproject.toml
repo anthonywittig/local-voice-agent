@@ -1,0 +1,21 @@
+[project]
+name = "local-voice-agent"
+version = "0.1.0"
+description = "A local speech-to-speech pizza order taker: STT -> LLM -> TTS, all on-device"
+requires-python = ">=3.10"
+dependencies = [
+    "faster-whisper>=1.0.0",
+    "sounddevice>=0.4.6",
+    "numpy>=1.24",
+    "requests>=2.31",
+]
+
+[project.scripts]
+pizza-agent = "agent.main:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["agent*"]
