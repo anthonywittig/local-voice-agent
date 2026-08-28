@@ -13,7 +13,8 @@ microphone ──► STT ──────────► LLM ─────�
 
 You call Mario's Pizzeria, and "Sam" takes your order: size, toppings, sides,
 pickup or delivery, reads the order back with the total, and hangs up when you
-confirm.
+confirm. You can **interrupt the agent mid-sentence** (barge-in) — the mic
+stays open while it talks.
 
 ## Can this really run locally on a MacBook Pro?
 
@@ -37,9 +38,9 @@ make setup   # venv, Python deps, PortAudio, Ollama, LLM weights
 make run     # start taking orders
 ```
 
-Stay quiet for the one-second mic calibration, listen to the greeting, then
-just talk. The agent detects when you stop speaking, transcribes, thinks,
-and talks back. Ctrl-C hangs up.
+Listen to the greeting, then just talk. The agent detects when you stop
+speaking, transcribes, thinks, and talks back — and you can talk over it to
+interrupt. Ctrl-C hangs up.
 
 `make help` lists the other targets (`install`, `ollama`, `clean`). To use a
 different LLM: `make setup LLM_MODEL=qwen2.5:7b` then `make run`.
@@ -84,7 +85,12 @@ Everything is tunable via environment variables (see `agent/config.py`):
 | `PIZZA_TTS_ENGINE` | `say` | `say` (macOS) or `piper` |
 | `PIZZA_TTS_VOICE` | `Samantha` | macOS voice (`say -v '?'` lists them) |
 | `PIZZA_SILENCE_END` | `0.9` | Seconds of silence that end your turn |
-| `PIZZA_VAD_MULT` | `4.0` | Speech threshold as a multiple of ambient noise |
+| `PIZZA_VAD_ENGINE` | `silero` | `silero` (neural, robust) or `energy` (no download) |
+| `PIZZA_VAD_THRESHOLD` | `0.5` | Silero speech probability that counts as speech |
+| `PIZZA_VAD_MULT` | `4.0` | Energy engine: threshold as a multiple of ambient noise |
+| `PIZZA_BARGE_IN` | `1` | Set `0` to disable interrupting the agent |
+| `PIZZA_BARGE_THRESHOLD` | `0.85` | Speech probability required to cut the agent off |
+| `PIZZA_BARGE_MIN_SPEECH` | `0.35` | Seconds of sustained speech before TTS stops |
 
 ### Non-Mac / nicer voices
 
@@ -92,25 +98,52 @@ Set `PIZZA_TTS_ENGINE=piper` and `pip install piper-tts` to use
 [Piper](https://github.com/rhasspy/piper), a fast local neural TTS that works on
 Linux too.
 
+## Barge-in (interrupting the agent)
+
+While the agent speaks, the mic stays open. If you talk over it with
+sustained, confident speech (~0.35 s above a 0.85 Silero speech probability),
+the TTS process is killed, your words — including a half-second of pre-roll
+from before the trigger — are captured and transcribed, and the conversation
+continues from your interruption.
+
+The hard part of barge-in is the agent hearing **itself** through open
+speakers. Two defenses are in place:
+
+1. The barge-in trigger uses a stricter threshold and requires sustained
+   speech, so quieter echo usually doesn't trip it.
+2. If it does trip, the transcript is compared against what the agent was
+   saying; when most of the heard words match, it's discarded as self-echo
+   instead of being sent to the LLM.
+
+For reliable barge-in, use **headphones**, or enable macOS **Voice Isolation**
+on the mic (click the orange mic icon in the menu bar while the agent is
+running → Mic Mode → Voice Isolation) — Apple's own echo/noise suppression
+then strips the agent's voice from the input. Set `PIZZA_BARGE_IN=0` to turn
+barge-in off entirely.
+
 ## How it works
 
-- **`agent/audio.py`** — captures mic audio with a simple energy-based voice
-  activity detector. It calibrates against ambient noise at startup, starts
-  recording when you speak, and ends your turn after ~0.9 s of silence.
+- **`agent/vad.py`** — voice activity detection. Default is [Silero VAD](https://github.com/snakers4/silero-vad)
+  v5 (a ~2 MB ONNX model, one-time download, CPU inference via onnxruntime),
+  which is robust to fans and room noise. `PIZZA_VAD_ENGINE=energy` falls back
+  to the original RMS-threshold detector with ambient calibration.
+- **`agent/audio.py`** — turn-taking. `listen()` waits for you to speak and
+  ends your turn after ~0.9 s of silence; `monitor_playback()` watches the mic
+  while the agent talks and implements the barge-in trigger.
 - **`agent/stt.py`** — transcribes the utterance with faster-whisper
   (CTranslate2, int8), which is fast on Apple Silicon CPUs.
 - **`agent/llm.py`** — sends the conversation to Ollama's chat API. The system
   prompt makes the model a pizza order taker with a fixed menu and rules to
   keep replies short and voice-friendly. When the order is confirmed, the model
   appends an `[END_CALL]` token, which cleanly ends the session.
-- **`agent/tts.py`** — speaks the reply with macOS `say` (or Piper).
+- **`agent/tts.py`** — speaks the reply with macOS `say` (or Piper), returning
+  a `Playback` handle that can be polled and stopped for barge-in.
 - **`agent/main.py`** — the loop tying it together, printing the transcript and
-  per-stage latencies as you go.
+  per-stage latencies as you go, plus the self-echo transcript check.
 
 ## Ideas for later
 
 - Stream the LLM output sentence-by-sentence into TTS to cut response latency.
-- Swap the energy VAD for [Silero VAD](https://github.com/snakers4/silero-vad)
-  for robustness in noisy rooms.
-- Barge-in support (stop TTS when the caller starts talking).
+- Full acoustic echo cancellation (speexdsp or macOS voice-processing I/O) so
+  open-speaker barge-in works without Voice Isolation.
 - Structured order extraction (JSON) alongside the conversation for a real POS.

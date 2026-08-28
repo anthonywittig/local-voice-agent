@@ -8,6 +8,7 @@ dependencies = [
     "sounddevice>=0.4.6",
     "numpy>=1.24",
     "requests>=2.31",
+    "onnxruntime>=1.16",
 ]
 
 [project.scripts]
