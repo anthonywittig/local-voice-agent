@@ -36,6 +36,22 @@ class Config:
     vad_energy_multiplier: float = float(os.environ.get("PIZZA_VAD_MULT", "4.0"))
     vad_min_threshold: float = 0.004        # floor so a silent room doesn't trigger
 
+    # --- Barge-in (talk over the agent to interrupt TTS) ---
+    # Speaker echo can look like speech, so barge-in uses a higher energy bar
+    # and requires a short run of consecutive loud frames before cutting TTS.
+    barge_in: bool = os.environ.get("PIZZA_BARGE_IN", "1").lower() not in (
+        "0",
+        "false",
+        "no",
+        "off",
+    )
+    barge_in_multiplier: float = float(os.environ.get("PIZZA_BARGE_IN_MULT", "3.0"))
+    # Mic energy must exceed predicted speaker-echo (from the TTS wav) by this
+    # factor. Loud syllables are predicted; talking over Sam is not.
+    barge_in_echo_spike: float = float(os.environ.get("PIZZA_BARGE_IN_ECHO", "1.4"))
+    barge_in_min_ms: int = int(os.environ.get("PIZZA_BARGE_IN_MS", "180"))
+    barge_in_grace_ms: int = 500            # enough overlap to fit echo delay
+
     # Words/phrases that end the call once the order is confirmed
     goodbye_marker: str = "[END_CALL]"
 
