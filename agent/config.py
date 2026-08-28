@@ -28,13 +28,32 @@ class Config:
     tts_rate_wpm: int = int(os.environ.get("PIZZA_TTS_RATE", "185"))
 
     # --- Audio capture / VAD ---
+    # Frames are 512 samples (32 ms) at 16 kHz — the chunk size Silero VAD requires.
     sample_rate: int = 16000
-    frame_ms: int = 30                      # analysis frame size
     silence_end_sec: float = float(os.environ.get("PIZZA_SILENCE_END", "0.9"))
     max_utterance_sec: float = 30.0
+
+    # "silero" (neural, robust, ~2 MB one-time download) or "energy" (no download,
+    # RMS threshold with ambient calibration).
+    vad_engine: str = os.environ.get("PIZZA_VAD_ENGINE", "silero")
+    vad_threshold: float = float(os.environ.get("PIZZA_VAD_THRESHOLD", "0.5"))
+    vad_model_path: str = os.environ.get("PIZZA_VAD_MODEL", "")
+
+    # Energy-engine tuning
     calibration_sec: float = 1.0            # ambient-noise sampling at startup
     vad_energy_multiplier: float = float(os.environ.get("PIZZA_VAD_MULT", "4.0"))
     vad_min_threshold: float = 0.004        # floor so a silent room doesn't trigger
+
+    # --- Barge-in (interrupt the agent mid-sentence) ---
+    barge_in: bool = os.environ.get("PIZZA_BARGE_IN", "1") not in ("0", "false", "")
+    # Stricter than vad_threshold: during playback the mic also hears the agent's
+    # own voice, so demand sustained, confident speech before cutting TTS off.
+    barge_in_threshold: float = float(os.environ.get("PIZZA_BARGE_THRESHOLD", "0.85"))
+    barge_in_min_speech_sec: float = float(os.environ.get("PIZZA_BARGE_MIN_SPEECH", "0.35"))
+    barge_in_preroll_sec: float = 0.5       # audio kept from before the trigger
+    # Discard a barge-in whose transcript mostly matches what the agent was
+    # saying — that's the agent's own voice echoing into the mic.
+    echo_overlap_ratio: float = 0.6
 
     # Words/phrases that end the call once the order is confirmed
     goodbye_marker: str = "[END_CALL]"
