@@ -32,6 +32,14 @@ class OrderTaker:
         """Record the agent's spoken greeting so the LLM knows it happened."""
         self.messages.append({"role": "assistant", "content": greeting})
 
+    def note_interrupted(self) -> None:
+        """Mark the last assistant turn as cut off so the model does not
+        assume the caller heard the whole reply."""
+        if self.messages and self.messages[-1]["role"] == "assistant":
+            self.messages[-1]["content"] += (
+                " (The caller started speaking and cut you off.)"
+            )
+
     def reply(self, user_text: str) -> str:
         self.messages.append({"role": "user", "content": user_text})
         resp = requests.post(

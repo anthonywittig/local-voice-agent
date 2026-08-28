@@ -38,8 +38,8 @@ make run     # start taking orders
 ```
 
 Stay quiet for the one-second mic calibration, listen to the greeting, then
-just talk. The agent detects when you stop speaking, transcribes, thinks,
-and talks back. Ctrl-C hangs up.
+just talk. You can interrupt the agent by talking over it. The agent detects
+when you stop speaking, transcribes, thinks, and talks back. Ctrl-C hangs up.
 
 `make help` lists the other targets (`install`, `ollama`, `clean`). To use a
 different LLM: `make setup LLM_MODEL=qwen2.5:7b` then `make run`.
@@ -85,6 +85,9 @@ Everything is tunable via environment variables (see `agent/config.py`):
 | `PIZZA_TTS_VOICE` | `Samantha` | macOS voice (`say -v '?'` lists them) |
 | `PIZZA_SILENCE_END` | `0.9` | Seconds of silence that end your turn |
 | `PIZZA_VAD_MULT` | `4.0` | Speech threshold as a multiple of ambient noise |
+| `PIZZA_BARGE_IN` | `1` | Talk over the agent to interrupt TTS (`0` to disable) |
+| `PIZZA_BARGE_IN_MULT` | `3.0` | Barge-in floor as a multiple of the listen threshold |
+| `PIZZA_BARGE_IN_ECHO` | `1.4` | Mic must exceed predicted speaker-echo by this factor |
 
 ### Non-Mac / nicer voices
 
@@ -96,14 +99,18 @@ Linux too.
 
 - **`agent/audio.py`** — captures mic audio with a simple energy-based voice
   activity detector. It calibrates against ambient noise at startup, starts
-  recording when you speak, and ends your turn after ~0.9 s of silence.
+  recording when you speak, and ends your turn after ~0.9 s of silence. While
+  the agent is talking, barge-in compares the mic to the TTS waveform (delayed
+  to match speaker-to-mic echo) so Sam's own voice does not count as you.
 - **`agent/stt.py`** — transcribes the utterance with faster-whisper
   (CTranslate2, int8), which is fast on Apple Silicon CPUs.
 - **`agent/llm.py`** — sends the conversation to Ollama's chat API. The system
   prompt makes the model a pizza order taker with a fixed menu and rules to
   keep replies short and voice-friendly. When the order is confirmed, the model
   appends an `[END_CALL]` token, which cleanly ends the session.
-- **`agent/tts.py`** — speaks the reply with macOS `say` (or Piper).
+- **`agent/tts.py`** — speaks the reply with macOS `say` (or Piper). For barge-in
+  it renders a wav first so playback can be compared against the mic, then plays
+  it with `afplay` (killable mid-utterance).
 - **`agent/main.py`** — the loop tying it together, printing the transcript and
   per-stage latencies as you go.
 
@@ -112,5 +119,4 @@ Linux too.
 - Stream the LLM output sentence-by-sentence into TTS to cut response latency.
 - Swap the energy VAD for [Silero VAD](https://github.com/snakers4/silero-vad)
   for robustness in noisy rooms.
-- Barge-in support (stop TTS when the caller starts talking).
 - Structured order extraction (JSON) alongside the conversation for a real POS.
