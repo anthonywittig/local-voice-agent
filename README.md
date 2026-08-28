@@ -102,20 +102,21 @@ Linux too.
 
 While the agent speaks, the mic stays open. If you talk over it with
 sustained, confident speech (~0.35 s above a 0.85 Silero speech probability),
-the TTS process is killed, your words — including a half-second of pre-roll
-from before the trigger — are captured and transcribed, and the conversation
-continues from your interruption.
+your words are captured and transcribed, the TTS process is killed, and the
+conversation continues from your interruption.
 
 The hard part of barge-in is the agent hearing **itself** through open
-speakers. Two defenses are in place:
+speakers, so the kill is **verified first**: a VAD trigger alone never stops
+playback. The triggering audio (plus a half-second of lead-in) is transcribed
+while the agent keeps talking, and the transcript is compared against what
+the agent is currently saying. Only when the heard words are clearly *not*
+the agent's own sentence does the TTS get cut off; echo triggers are
+suppressed and monitoring continues. The check costs a few hundred
+milliseconds, so a real interruption lands with a short delay.
 
-1. The barge-in trigger uses a stricter threshold and requires sustained
-   speech, so quieter echo usually doesn't trip it.
-2. If it does trip, the transcript is compared against what the agent was
-   saying; when most of the heard words match, it's discarded as self-echo
-   instead of being sent to the LLM.
-
-For reliable barge-in, use **headphones**, or enable macOS **Voice Isolation**
+Echo suppression means open-speaker use works, but the agent talking still
+masks quiet interjections. For the snappiest barge-in, use **headphones**, or
+enable macOS **Voice Isolation**
 on the mic (click the orange mic icon in the menu bar while the agent is
 running → Mic Mode → Voice Isolation) — Apple's own echo/noise suppression
 then strips the agent's voice from the input. Set `PIZZA_BARGE_IN=0` to turn

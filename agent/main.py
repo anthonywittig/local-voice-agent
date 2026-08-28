@@ -57,22 +57,33 @@ def main() -> None:
 
     def speak(text: str, interruptible: bool = True) -> Optional[str]:
         """Speak `text`; if the caller barges in, return their transcribed
-        words (None otherwise, or when the trigger was our own echo)."""
+        words, None otherwise. Playback is only cut off after the trigger
+        audio is transcribed and confirmed NOT to be the agent's own voice
+        echoing from the speakers — so echo can't stop the agent talking."""
         playback = tts.speak_async(text)
         if not (cfg.barge_in and interruptible):
             playback.wait()
             return None
-        audio = mic.monitor_playback(playback)
+
+        echo_hinted = False
+
+        def is_real_interrupt(audio) -> bool:
+            nonlocal echo_hinted
+            heard = stt.transcribe(audio)
+            if looks_like_echo(heard, text, cfg.echo_overlap_ratio):
+                if not echo_hinted:
+                    echo_hinted = True
+                    print(
+                        "(hearing my own voice — suppressed; use headphones or "
+                        "macOS Voice Isolation for snappier barge-in)"
+                    )
+                return False
+            return True
+
+        audio = mic.monitor_playback(playback, is_real_interrupt)
         if audio is None:
             return None
-        heard = stt.transcribe(audio)
-        if looks_like_echo(heard, text, cfg.echo_overlap_ratio):
-            print(
-                "(barge-in ignored as self-echo — for reliable barge-in use "
-                "headphones or enable macOS Voice Isolation on the mic)"
-            )
-            return None
-        return heard
+        return stt.transcribe(audio) or None
 
     print("\n--- Call connected. Speak after the greeting; Ctrl-C to hang up. ---")
     print("--- You can interrupt the agent mid-sentence. ---\n")

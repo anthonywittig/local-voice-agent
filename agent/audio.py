@@ -86,21 +86,32 @@ class MicListener:
 
         return np.concatenate(captured)
 
-    def monitor_playback(self, playback) -> Optional[np.ndarray]:
-        """Listen while the agent speaks. On sustained caller speech, stop
-        `playback` and capture the rest of the utterance; return it. Return
-        None if playback finished without interruption."""
+    def monitor_playback(self, playback, is_real_interrupt) -> Optional[np.ndarray]:
+        """Listen while the agent speaks. On sustained caller speech, ask
+        `is_real_interrupt(audio)` whether it is the caller (and not the
+        agent's own voice echoing from the speakers). Only then stop
+        `playback`, capture the rest of the utterance, and return it.
+        Return None if playback finished without a real interruption.
+
+        The check runs while playback continues, so a false trigger never
+        cuts the agent off; frames arriving during the check queue up and
+        are still processed.
+        """
         frames: "queue.Queue[np.ndarray]" = queue.Queue()
         trigger_frames = max(
             1, int(self.cfg.barge_in_min_speech_sec / self.frame_sec)
         )
+        # Rolling window handed to the echo check: the sustained-speech run
+        # plus some lead-in so the start of the interjection isn't lost.
         preroll = collections.deque(
-            maxlen=int(self.cfg.barge_in_preroll_sec / self.frame_sec)
+            maxlen=trigger_frames
+            + int(self.cfg.barge_in_preroll_sec / self.frame_sec)
         )
         silence_frames_needed = int(self.cfg.silence_end_sec / self.frame_sec)
         max_frames = int(self.cfg.max_utterance_sec / self.frame_sec)
 
         speech_run = 0
+        interrupted = False
         self.vad.reset()
         with self._stream(frames):
             # Phase 1: agent talking; look for a sustained, confident interruption.
@@ -113,11 +124,16 @@ class MicListener:
                 if self.vad.is_speech(frame, threshold=self.cfg.barge_in_threshold):
                     speech_run += 1
                     if speech_run >= trigger_frames:
-                        playback.stop()
-                        break
+                        if is_real_interrupt(np.concatenate(preroll)):
+                            playback.stop()
+                            interrupted = True
+                            break
+                        # Echo (or unintelligible): keep talking, look for a
+                        # fresh window of sustained speech.
+                        speech_run = 0
                 else:
                     speech_run = 0
-            else:
+            if not interrupted:
                 return None  # playback finished on its own
 
             # Phase 2: caller has the floor; capture until they go quiet.
